@@ -7,8 +7,7 @@
 class AppEvent_Update : public AppEvent
 {
 public:
-    AppEvent_Update()          = default;
-    virtual ~AppEvent_Update() = default;
+    AppEvent_Update() = default;
 }
 
 class AppEvent_Tick : public AppEvent
@@ -40,7 +39,7 @@ protected:
 
     virtual void onTick(AppEvent_Tick const& aEvent)
     {
-        ...
+        // ...
     }
 };
 
@@ -56,9 +55,9 @@ class Actor : public EventListener
 private:
     void onUpdate()
     {
-        ...
+        // ...
 
-        if (the_application_needs_to_exit)
+        if (/* requires application exit inside event response */)
           aEvent.handled = true; // handled is mutable
     }
 };
@@ -69,11 +68,11 @@ private:
 Actor actor1;
 Actor actor2;
 
-auto& EM = EventManager.get(); // or you can use the EVENT_MANAGER_GET macro
+auto& EM = EventManager.get();         // or you can use the EVENT_MANAGER_GET macro
 
-EM.publish(AppEvent_Tick(0.33f));
+EM.publish(AppEvent_Tick(0.33f));      // all subscribers will be notified
 
-EM.signal(actor2, AppEvent_Update());
+EM.signal(actor2, AppEvent_Update());  // only actor2 will be notified
 ```
 
 ## License
