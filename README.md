@@ -1,5 +1,15 @@
 # Header-only C++20 simple and fast event bus
 
+## Description
+
+• EventManager is a singleton.
+
+• An entity subscribes to an event by passing a pointer to itself and to a method that responds to the event. 
+
+• Unsubscribing occurs by passing the event type and a pointer to the entity; it is also possible to unsubscribe from all events at once.
+
+• You can publish events both for all subscribers and for a specific one.
+
 ## Example
 
 **Creating some event classes**
