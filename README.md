@@ -73,7 +73,7 @@ private:
 };
 ```
 
-**Publishing and signalling**
+**Publishing**
 ```cpp
 Actor actor1;
 Actor actor2;
