@@ -63,7 +63,7 @@ class Actor : public EventListener
     }
 
 private:
-    void onUpdate()
+    void onUpdate(AppEvent_Update const& aEvent)
     {
         // ...
 
