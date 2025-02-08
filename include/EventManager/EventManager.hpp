@@ -44,11 +44,10 @@ SOFTWARE.
 
 namespace el
 {
-	// Base class for custom events
 	class EventBase
 	{
 	public:
-		// This variable needs to be changed when the application shuts down inside the event response
+		// Stop notifying the remaining receivers
 		mutable bool handled = false;
 
 		virtual ~EventBase() = default;
@@ -225,7 +224,7 @@ public:
 	EventManager(EventManager const&)              = delete;
 	EventManager& operator = (EventManager const&) = delete;
 
-	// Publish an event to all subscribers
+	// Publish the event to all subscribers
 	template <DerivedFromEventBase EventType>
 	constexpr void publish(EventType&& e)
 	{
@@ -262,7 +261,7 @@ public:
 		}
 	}
 
-	// Schedule a one-time callback for a specific type of event
+	// Schedule a one-time callback for a specific type of the event
 	template <DerivedFromEventBase EventType>
 	constexpr void schedule(std::function<void()>&& action)
 	{
@@ -275,7 +274,7 @@ public:
 		m_urgentActions.push_back(std::move(urgentAction));
 	}
 
-	// Subscribe to an event
+	// Subscribe to a specific type of the event
 	template <DerivedFromEventReceiver Receiver, DerivedFromEventBase EventType>
 	constexpr void subscribe(EventReceiver& receiver, void(Receiver::* method)(EventType const&))
 	{
@@ -285,7 +284,7 @@ public:
 		(m_subsCount[receiver_ptr])++;
 	}
 
-	// Subscribe to an event
+	// Subscribe a specific type of the event
 	template <DerivedFromEventBase EventType>
 	constexpr void subscribe(EventReceiver& receiver, std::function<void(EventType const&)>&& action)
 	{
@@ -295,7 +294,7 @@ public:
 		(m_subsCount[receiver_ptr])++;
 	}
 
-	// Unsubscribe from a specific event
+	// Unsubscribe from a specific type of the event
 	template <DerivedFromEventBase EventType>
 	constexpr void unsubscribe(EventReceiver& receiver)
 	{
