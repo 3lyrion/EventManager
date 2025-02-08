@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 ███████╗██╗░░░██╗███████╗███╗░░██╗████████╗███╗░░░███╗░█████╗░███╗░░██╗░█████╗░░██████╗░███████╗██████╗░
 ██╔════╝██║░░░██║██╔════╝████╗░██║╚══██╔══╝████╗░████║██╔══██╗████╗░██║██╔══██╗██╔════╝░██╔════╝██╔══██╗
@@ -269,7 +269,7 @@ public:
 		m_eventActions[typeid(EventType)].push_back(std::move(action));
 	}
 
-	// Schedule a one-time callback for a specific the next (any) event
+	// Schedule a one-time callback for the next (any) event
 	inline void schedule(std::function<void()>&& urgentAction)
 	{
 		m_urgentActions.push_back(std::move(urgentAction));
