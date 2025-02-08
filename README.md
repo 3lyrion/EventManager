@@ -2,94 +2,99 @@
 
 ## Description
 
-• EventManager is a singleton.
+- EventManager is a singleton.
 
-• An entity subscribes to an event by passing a pointer to itself and to a method that responds to the event. 
+- All events must inherit the EventBase class. Due to this, a mechanism is provided to stop notifying the remaining receivers.
 
-• Unsubscribing occurs by passing the event type and a pointer to the entity; it is also possible to unsubscribe from all events at once.
+- All event receivers must inherit the EventReceiver class. When the event receiver is destroyed, he automatically unsubscribes from all events.
 
-• You can publish events both for all subscribers and for a specific one.
+- The event receiver subscribes to the event by passing a reference to itself and a pointer to the method that handles the event, or the corresponding lambda expression. 
+
+- Unsubscribing occurs by passing the event type and a pointer to the event receiver; it is also possible to unsubscribe from all events at once.
+
+- You can schedule an urgent action which is a one-time callback for the next (any) event or an event action which is a one-time callback for a specific type of event.
 
 ## Example
 
-**Creating some event classes**
 ```cpp
-class AppEvent_Update : public AppEvent
+#define self *this
+
+class App
 {
 public:
-    AppEvent_Update() = default;
-}
-
-class AppEvent_Tick : public AppEvent
-{
-public:
-    float deltaTime;
-
-    AppEvent_Update(float deltaTime_) : deltaTime(deltaTime_) { }
-}
-```
-
-**Subscribing and unsubscribing**
-```cpp
-class EventReceiver
-{
-public:
-    virtual ~EventReceiver()
+    class E_Update : public el::EventBase
     {
-        EM.unsubscribeAll(this);
+    public:
+        explicit E_Update() = default;
     }
-	
+
+    class E_Tick : public el::EventBase
+    {
+    public:
+        float deltaTime;
+
+        explicit E_Tick(float theDeltaTime) :
+            deltaTime(theDeltaTime) { }
+    }
+
+    void run()
+    {
+        auto& EM = el::EventManager::get(); // or you can use the EVENT_MANAGER_GET macro
+
+        // ...
+
+        EM.publish(E_Update());
+
+        // ...s
+
+        EM.publish(E_Tick(dt));
+
+        // ...
+    }
+}
+
+class MyReceiver : el::EventReceiver
+{
 protected:
-    EventManager& EM; // EventManager is a singleton
-
-    EventReceiver() : EM(EventManager.get())
+    MyReceiver()
     {
-        EM.subscribe(this, &EventReceiver::onTick);
+        // EM is inherited
+        EM.subscribe(self, &MyReceiver::onUpdate);
     }
 
-    virtual void onTick(AppEvent_Tick const& aEvent)
+    virtual ~MyReceiver() = default;
+
+    virtual void onUpdate(App::E_Update const& e)
     {
         // ...
     }
 };
 
-class Actor : public EventListener
+class Actor : public MyReceiver
 {
     Actor()
     {
-        EM.subscribe(this, &Actor::onUpdate);
+        EM.subscribe(self, &Actor::onTick);
 
-        EM.unsubscribe<AppEvent_Tick>(this);
+        EM.unsubscribe<App::E_Tick>(self);
     }
 
 private:
-    void onUpdate(AppEvent_Update const& aEvent)
+    void onUpdate(E_Update const& e)
     {
         // ...
 
-        if (/* requires application exit inside event response */)
-          aEvent.handled = true; // handled is mutable
+        if (/* requires stopping informing other receivers */)
+            e.handled = true; // handled is mutable
     }
 };
-```
-
-**Publishing**
-```cpp
-Actor actor1;
-Actor actor2;
-
-auto& EM = EventManager.get();         // or you can use the EVENT_MANAGER_GET macro
-
-EM.publish(AppEvent_Tick(0.33f));      // all subscribers will be notified
-
-EM.signal(actor2, AppEvent_Update());  // only actor2 will be notified
 ```
 
 ## License
 
 This project is under MIT License.
 
-Copyright (c) 2024 Mouseunder
+Copyright (c) 2025 3lyrion
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy  
 > of this software and associated documentation files (the "Software"), to deal  
