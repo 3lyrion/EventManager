@@ -18,7 +18,9 @@
 
 ```cpp
 #define self *this
+```
 
+```cpp
 class App
 {
 public:
