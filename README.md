@@ -30,6 +30,15 @@ public:
         explicit E_Update() = default;
     }
 
+    class E_PreTick : public el::EventBase
+    {
+    public:
+        float deltaTime;
+
+        explicit E_PreTick(float theDeltaTime) :
+            deltaTime(theDeltaTime) { }
+    }
+
     class E_Tick : public el::EventBase
     {
     public:
@@ -41,13 +50,15 @@ public:
 
     void run()
     {
-        auto& EM = el::EventManager::get(); // or you can use the EVENT_MANAGER_GET macro
+        EVENT_MANAGET_GET(); // auto& EM = el::EventManager::get();
 
         // ...
 
         EM.publish(E_Update());
 
-        // ...s
+        // ...
+
+        EM.publish(E_PreTick(dt));
 
         EM.publish(E_Tick(dt));
 
@@ -57,14 +68,15 @@ public:
 
 class MyReceiver : el::EventReceiver
 {
+public:
+    virtual ~MyReceiver() = default;
+
 protected:
     MyReceiver()
     {
         // EM is inherited
         EM.subscribe(self, &MyReceiver::onUpdate);
     }
-
-    virtual ~MyReceiver() = default;
 
     virtual void onUpdate(App::E_Update const& e)
     {
@@ -74,15 +86,40 @@ protected:
 
 class Actor : public MyReceiver
 {
+public:
     Actor()
     {
         EM.subscribe(self, &Actor::onTick);
 
+        EM.subscribe<App::E_PreTick>(
+            [this](App::E_PreTick const& e)
+            {
+                // ...
+            }
+        );
+
         EM.unsubscribe<App::E_Tick>(self);
+    }
+    
+    void doSomething()
+    {
+        EM.schedule<App::E_Update>( // a one-time callback
+            [this]
+            {
+                // ...
+            }
+        );
+
+        EM.schedule(                // an urgent action
+            [this]
+            {
+                // ...
+            }
+        );
     }
 
 private:
-    void onUpdate(E_Update const& e)
+    void onTick(App::E_Tick const& e)
     {
         // ...
 
