@@ -1,4 +1,4 @@
-# Header-only C++20 simple and fast event bus
+# Header-only C++20 fast and reliable event bus
 
 ## Description
 
