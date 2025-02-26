@@ -14,6 +14,8 @@
 
 - You can schedule an urgent action which is a one-time callback for the next (any) event or an event action which is a one-time callback for a specific type of event.
 
+- The system ignores re-subscribing to events (you don't need to monitor this). Nested events are handled without problems.
+
 ## Example
 
 ```cpp
@@ -27,7 +29,7 @@ public:
     class E_Update : public el::EventBase
     {
     public:
-        explicit E_Update() = default;
+        E_Update() = default;
     }
 
     class E_PreTick : public el::EventBase
@@ -35,7 +37,7 @@ public:
     public:
         float deltaTime;
 
-        explicit E_PreTick(float theDeltaTime) :
+        E_PreTick(float theDeltaTime) :
             deltaTime(theDeltaTime) { }
     }
 
@@ -44,7 +46,7 @@ public:
     public:
         float deltaTime;
 
-        explicit E_Tick(float theDeltaTime) :
+        E_Tick(float theDeltaTime) :
             deltaTime(theDeltaTime) { }
     }
 
