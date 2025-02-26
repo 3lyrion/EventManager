@@ -1,4 +1,4 @@
-/*
+﻿/*
 
 ███████╗██╗░░░██╗███████╗███╗░░██╗████████╗███╗░░░███╗░█████╗░███╗░░██╗░█████╗░░██████╗░███████╗██████╗░
 ██╔════╝██║░░░██║██╔════╝████╗░██║╚══██╔══╝████╗░████║██╔══██╗████╗░██║██╔══██╗██╔════╝░██╔════╝██╔══██╗
@@ -44,173 +44,261 @@ SOFTWARE.
 
 namespace el
 {
-	class EventBase
+
+using Action = std::function<void()>;
+
+class EventBase
+{
+public:
+	// Stop notifying the remaining receivers
+	mutable bool handled = false;
+
+	virtual ~EventBase() = default;
+
+protected:
+	EventBase() = default;
+};
+
+class EventReceiver;
+
+template <typename T>
+concept DerivedFromEventBase = std::derived_from<T, EventBase>;
+
+template <typename T>
+concept DerivedFromEventReceiver = std::derived_from<T, EventReceiver>;
+
+namespace internal
+{
+
+	class EventHandler
 	{
 	public:
-		// Stop notifying the remaining receivers
-		mutable bool handled = false;
+		EventHandler()          = default;
+		virtual ~EventHandler() = default;
 
-		virtual ~EventBase() = default;
-
-	protected:
-		EventBase() = default;
+		virtual void handle(void* handler, EventBase const& e) const = 0;
 	};
 
-	class EventReceiver;
-
-	template <typename T>
-	concept DerivedFromEventBase = std::derived_from<T, EventBase>;
-
-	template <typename T>
-	concept DerivedFromEventReceiver = std::derived_from<T, EventReceiver>;
-
-	namespace internal
+	template <DerivedFromEventReceiver R, DerivedFromEventBase E>
+	class MethodEventHandler : public EventHandler
 	{
+	public:
+		using Method = void(R::*)(E const&);
 
-		class EventHandler
+		MethodEventHandler(Method method) : 
+			m_method(method) { }
+
+		void handle(void* handler, EventBase const& e) const final
 		{
-		public:
-			EventHandler()          = default;
-			virtual ~EventHandler() = default;
+			(static_cast<R*>(handler)->*m_method)(static_cast<E const&>(e));
+		}
 
-			virtual void handle(void* handler, EventBase const& e) const = 0;
-		};
+	private:
+		Method m_method{};
+	};
+
+	template <DerivedFromEventBase E>
+	class LambdaEventHandler : public EventHandler
+	{
+	public:
+		using Lambda = std::function<void(E const&)>;
+
+		LambdaEventHandler(Lambda&& lambda) : 
+			m_lambda(std::move(lambda)) { }
+
+		void handle(void*, EventBase const& e) const final
+		{
+			m_lambda(static_cast<E const&>(e));
+		}
+
+	private:
+		Lambda m_lambda{};
+	};
+
+	class EventHandlerList
+	{
+	public:
+		using Handler = std::unique_ptr<EventHandler>;
+
+		EventHandlerList() = default;
+
+		inline void dispatch(EventBase const& e)
+		{
+			m_executing = true;     // for nested events
+
+			for (auto handler : m_order)
+			{
+				if (!handler)
+					continue;
+
+				m_handlers[handler]->handle(handler, e);
+
+				if (e.handled)
+					break;
+			}
+
+			m_executing = false;   // for nested events
+
+			cleanUp();             // for nested events
+		}
 
 		template <DerivedFromEventReceiver R, DerivedFromEventBase E>
-		class MethodEventHandler : public EventHandler
+		constexpr void add(R* receiver, void(R::* method)(E const&))
 		{
-		public:
-			using Method = void(R::*)(E const&);
-
-			MethodEventHandler(Method method) : 
-				m_method(method) { }
-
-			void handle(void* handler, EventBase const& e) const final
+			auto entry = m_handlers.find(receiver);
+			if (entry == m_handlers.end())
 			{
-				(static_cast<R*>(handler)->*m_method)(static_cast<E const&>(e));
+				m_handlers[receiver] = std::make_unique<MethodEventHandler<R, E> >(method);
+				m_order.push_back(receiver);
 			}
-
-		private:
-			Method m_method{};
-		};
+		}
 
 		template <DerivedFromEventBase E>
-		class LambdaEventHandler : public EventHandler
+		constexpr void add(void* receiver, std::function<void(E const&)>&& lambda)
 		{
-		public:
-			using Lambda = std::function<void(E const&)>;
-
-			LambdaEventHandler(Lambda&& lambda) : 
-				m_lambda(std::move(lambda)) { }
-
-			void handle(void*, EventBase const& e) const final
+			auto entry = m_handlers.find(receiver);
+			if (entry == m_handlers.end())
 			{
-				m_lambda(static_cast<E const&>(e));
+				m_handlers[receiver] = std::make_unique<LambdaEventHandler<E> >(std::move(lambda));
+				m_order.push_back(receiver);
 			}
+		}
 
-		private:
-			Lambda m_lambda{};
-		};
-
-		class EventHandlerList
+		inline void remove(void* receiver)
 		{
-		public:
-			using Handler = std::unique_ptr<EventHandler>;
+			auto entry = m_handlers.find(receiver);
+			if (entry == m_handlers.end())
+				return;
 
-			EventHandlerList() = default;
+			m_handlers.erase(entry);
 
-			inline void dispatch(EventBase const& e)
+			if (m_executing)  // for nested events
 			{
-				m_executing = true;     // for nested events
+				m_needsCleanUp = true;
 
-				for (auto handler : m_order)
+				auto it = std::find(m_order.begin(), m_order.end(), receiver);
+				*it = nullptr;
+			}
+
+			else
+				m_order.remove(receiver);
+		}
+
+		inline void clear()
+		{
+			m_handlers .clear();
+			m_order    .clear();
+		}
+
+	private:
+		std::unordered_map<void*, Handler>	m_handlers;
+		std::list<void*>					m_order;
+
+		bool m_executing{};
+		bool m_needsCleanUp{};
+
+		inline void cleanUp()
+		{
+			if (!m_needsCleanUp)
+				return;
+
+			m_needsCleanUp = false;
+
+			m_order.remove_if(
+				[](auto handler)
 				{
-					if (!handler)
-						continue;
-
-					m_handlers[handler]->handle(handler, e);
-
-					if (e.handled)
-						break;
+					return !handler;
 				}
+			);
+		}
+	};
 
-				m_executing = false;   // for nested events
+	class UrgentActionList
+	{
+	public:
+		inline void add(Action&& action)
+		{
+			if (m_executing)
+				m_buffer.push_back(std::move(action));
 
-				cleanUp();             // for nested events
+			else
+				m_actions.push_back(std::move(action));
+		}
+
+		inline void exec()
+		{
+			m_executing = true;
+
+			m_actions.splice(m_actions.end(), std::move(m_buffer));
+			m_buffer.clear();
+
+			if (!m_actions.empty())
+			{
+				for (const auto& action : m_actions)
+					action();
+
+				m_actions.clear();
 			}
 
-			template <DerivedFromEventReceiver R, DerivedFromEventBase E>
-			constexpr void add(R* receiver, void(R::* method)(E const&))
+			m_executing = false;
+		}
+
+	private:
+		using ActionList = std::list<Action>;
+
+		bool		m_executing{};
+		ActionList	m_actions;
+		ActionList	m_buffer;
+	};
+
+	class EventActionList
+	{
+	public:
+		inline void add(type_info const& tid, Action&& action)
+		{
+			if (m_executing)
+				m_buffer[&tid].push_back(std::move(action));
+
+			else
+				m_actions[&tid].push_back(std::move(action));
+		}
+
+		inline void exec(type_info const& tid)
+		{
+			m_executing = true;
+
+			if (!m_buffer.empty())
 			{
-				auto entry = m_handlers.find(receiver);
-				if (entry == m_handlers.end())
+				m_actions.merge(std::move(m_buffer));
+				m_buffer.clear();
+			}
+
+			auto entry = m_actions.find(&tid);
+			if (entry != m_actions.end())
+			{
+				auto& actions = entry->second;
+				if (!actions.empty())
 				{
-					m_handlers[receiver] = std::make_unique<MethodEventHandler<R, E> >(method);
-					m_order.push_back(receiver);
+					for (const auto& action : actions)
+						action();
+
+					actions.clear();
 				}
 			}
 
-			template <DerivedFromEventBase E>
-			constexpr void add(void* receiver, std::function<void(E const&)>&& lambda)
-			{
-				auto entry = m_handlers.find(receiver);
-				if (entry == m_handlers.end())
-				{
-					m_handlers[receiver] = std::make_unique<LambdaEventHandler<E> >(std::move(lambda));
-					m_order.push_back(receiver);
-				}
-			}
+			m_executing = false;
+		}
 
-			inline void remove(void* receiver)
-			{
-				auto entry = m_handlers.find(receiver);
-				if (entry == m_handlers.end())
-					return;
+	private:
+		using ActionList	= std::list<Action>;
+		using EventActions	= std::unordered_map<type_info const*, ActionList>;
 
-				m_handlers.erase(entry);
-
-				if (m_executing)  // for nested events
-				{
-					m_needsCleanUp = true;
-
-					auto it = std::find(m_order.begin(), m_order.end(), receiver);
-					*it = nullptr;
-				}
-
-				else
-					m_order.remove(receiver);
-			}
-
-			inline void clear()
-			{
-				m_handlers .clear();
-				m_order    .clear();
-			}
-
-		private:
-			std::unordered_map<void*, Handler>	m_handlers;
-			std::list<void*>					m_order;
-
-			bool m_executing{};
-			bool m_needsCleanUp{};
-
-			inline void cleanUp()
-			{
-				if (!m_needsCleanUp)
-					return;
-
-				m_needsCleanUp = false;
-
-				m_order.remove_if(
-					[](auto handler)
-					{
-						return !handler;
-					}
-				);
-			}
-		};
+		bool			m_executing{};
+		EventActions	m_actions;
+		EventActions	m_buffer;
+	};
 		
-	} // namespace internal
+} // namespace internal
 
 class EventManager
 {
@@ -221,22 +309,16 @@ public:
 		return instance;
 	}
 
-	EventManager(EventManager const&)              = delete;
-	EventManager& operator = (EventManager const&) = delete;
+	EventManager(const EventManager&)              = delete;
+	EventManager& operator = (const EventManager&) = delete;
 
-	// Publish the event to all subscribers
+	// Publish an event to all subscribers
 	template <DerivedFromEventBase EventType>
 	constexpr void publish(EventType&& e)
 	{
 		auto& tid = typeid(EventType);
 
-		if (!m_urgentActions.empty())
-		{
-			for (const auto& action : m_urgentActions)
-				action();
-
-			m_urgentActions.clear();
-		}
+		m_urgentActions.exec();
 
 		{
 			auto entry = m_subscriptions.find(tid);
@@ -244,38 +326,22 @@ public:
 				entry->second.dispatch(e);
 		}
 
-		{
-			auto entry = m_eventActions.find(tid);
-			if (entry != m_eventActions.end())
-			{
-				auto& actions = entry->second;
-
-				if (!actions.empty())
-				{
-					for (const auto& action : actions)
-						action();
-
-					actions.clear();
-				}
-			}
-		}
+		m_eventActions.exec(tid);
 	}
 
-	// Schedule a one-time callback for a specific type of the event
 	template <DerivedFromEventBase EventType>
-	constexpr void schedule(std::function<void()>&& action)
+	constexpr void schedule(Action&& action)
 	{
-		m_eventActions[typeid(EventType)].push_back(std::move(action));
+		m_eventActions.add(typeid(EventType), std::move(action));
 	}
 
-	// Schedule a one-time callback for the next (any) event
-	inline void schedule(std::function<void()>&& urgentAction)
+	inline void schedule(Action&& urgentAction)
 	{
-		m_urgentActions.push_back(std::move(urgentAction));
+		m_urgentActions.add(std::move(urgentAction));
 	}
 
-	// Subscribe to a specific type of the event
-	template <DerivedFromEventReceiver Receiver, DerivedFromEventBase EventType>
+	// Subscribe to event
+	template <typename Receiver, DerivedFromEventBase EventType>
 	constexpr void subscribe(EventReceiver& receiver, void(Receiver::* method)(EventType const&))
 	{
 		auto receiver_ptr = &receiver;
@@ -284,7 +350,7 @@ public:
 		(m_subsCount[receiver_ptr])++;
 	}
 
-	// Subscribe a specific type of the event
+	// Subscribe to event
 	template <DerivedFromEventBase EventType>
 	constexpr void subscribe(EventReceiver& receiver, std::function<void(EventType const&)>&& action)
 	{
@@ -294,7 +360,7 @@ public:
 		(m_subsCount[receiver_ptr])++;
 	}
 
-	// Unsubscribe from a specific type of the event
+	// Unsubscribe from a specific event
 	template <DerivedFromEventBase EventType>
 	constexpr void unsubscribe(EventReceiver& receiver)
 	{
@@ -331,13 +397,16 @@ public:
 	}
 
 private:
-	using HandlerList = internal::EventHandlerList;
-	using ActionList  = std::list<std::function<void()> >;
+	using HandlerList		= internal::EventHandlerList;
+	using SubscriptionMap	= std::unordered_map<std::type_index, HandlerList>;
+	using EventActionList	= internal::EventActionList;
+	using UrgentActionList	= internal::UrgentActionList;
 
-	std::unordered_map<std::type_index, HandlerList>	m_subscriptions;
-	std::unordered_map<std::type_index, ActionList>		m_eventActions;
-	ActionList											m_urgentActions;
-	std::unordered_map<void*, uint32_t>					m_subsCount;
+	SubscriptionMap		m_subscriptions;
+	EventActionList		m_eventActions;
+	UrgentActionList	m_urgentActions;
+
+	std::unordered_map<void*, uint32_t>	m_subsCount;
 
 	EventManager()  = default;
 	~EventManager() = default;
